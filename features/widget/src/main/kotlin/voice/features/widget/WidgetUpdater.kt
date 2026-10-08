@@ -4,7 +4,9 @@ import android.appwidget.AppWidgetManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.res.Configuration
+import android.os.Build
 import android.os.Bundle
+import android.util.TypedValue
 import android.widget.RemoteViews
 import androidx.core.graphics.drawable.toBitmap
 import androidx.datastore.core.DataStore
@@ -77,6 +79,7 @@ class WidgetUpdater(
 
     val remoteViews = RemoteViews(context.packageName, R.layout.widget)
     initElements(remoteViews = remoteViews, book = book, coverSize = useHeight)
+    fitWidgetContent(remoteViews, opts)
 
     appWidgetManager.updateAppWidget(widgetId, remoteViews)
   }
@@ -93,10 +96,33 @@ class WidgetUpdater(
 
   private fun initWidgetForAbsentBook(widgetId: Int) {
     val remoteViews = RemoteViews(context.packageName, R.layout.widget)
+    fitWidgetContent(remoteViews, appWidgetManager.getAppWidgetOptions(widgetId))
     val wholeWidgetClickPI = mainActivityIntentProvider.toCurrentBook()
     remoteViews.setImageViewResource(R.id.imageView, UiR.drawable.album_art)
     remoteViews.setOnClickPendingIntent(R.id.wholeWidget, wholeWidgetClickPI)
     appWidgetManager.updateAppWidget(widgetId, remoteViews)
+  }
+
+  private fun fitWidgetContent(
+    views: RemoteViews,
+    options: Bundle,
+  ) {
+    val heightKey = if (isPortrait) AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT else AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT
+    val heightDp = options.getInt(heightKey)
+    if (heightDp <= 0 || heightDp >= 80 || Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return
+
+    // Keep the original layout. Short launcher cells need room for both text lines and controls.
+    // Send explicit pixels so the host cannot inflate these sizes using a different resource density.
+    val density = context.resources.configuration.densityDpi / 160F
+    val fontScale = context.resources.configuration.fontScale
+    views.setTextViewTextSize(R.id.title, TypedValue.COMPLEX_UNIT_PX, 12F * density * fontScale)
+    views.setTextViewTextSize(R.id.summary, TypedValue.COMPLEX_UNIT_PX, 10.5F * density * fontScale)
+    for (id in listOf(R.id.rewind, R.id.playPause, R.id.fastForward)) {
+      views.setViewLayoutWidth(id, 44F * density, TypedValue.COMPLEX_UNIT_PX)
+      views.setViewLayoutHeight(id, 44F * density, TypedValue.COMPLEX_UNIT_PX)
+      val padding = (6F * density).toInt()
+      views.setViewPadding(id, padding, padding, padding, padding)
+    }
   }
 
   private val isPortrait: Boolean

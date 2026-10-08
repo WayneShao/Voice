@@ -2,7 +2,7 @@
 
 This fork keeps Voice's upstream architecture and adds two local features:
 
-- Desktop widgets retain the original layout, typography, artwork and controls. Size-based and single-chapter visibility conditions are removed, so the full existing widget is always used.
+- Desktop widgets retain the original layout, typography, artwork and controls. Size-based and single-chapter visibility conditions are removed, so the full existing widget is always used. On Android 12 and newer, cells shorter than 80 dp use compact text and explicitly sized controls within that same layout, preventing launcher density differences from squeezing the playback icons. Cells at least 80 dp tall keep the original dimensions. This rule has no manufacturer or model checks.
 - Global playback speed, silence skipping and gain live in Settings. Each book can override each option independently, including neutral values, or return to the global value. Changes affect the loaded player without resetting its position.
 
 ## Data compatibility
