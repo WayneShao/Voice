@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="global_playback_settings">全局播放设置</string>
+    <string name="global_playback_settings_summary">跟随全局设置的书籍使用这些设置。单独设置的书籍不受影响。</string>
+    <string name="book_playback_settings">本书播放设置</string>
+    <string name="playback_setting_skip_silence">跳过静音</string>
+    <string name="playback_setting_gain_value">%1$s 分贝</string>
+    <string name="playback_setting_follow_global">跟随全局设置</string>
+    <string name="playback_setting_book_override">为本书单独设置</string>
+    <string name="playback_setting_reset_all">全部恢复为全局设置</string>
+    <string name="playback_setting_inherited">正在跟随全局设置</string>
+    <string name="playback_setting_overridden">已为本书单独设置</string>
+</resources>

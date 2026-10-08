@@ -368,7 +368,7 @@ class MediaScannerTest {
       ),
     )
 
-    val bookRepo = BookRepositoryImpl(chapterRepo, bookContentRepo)
+    val bookRepo = BookRepositoryImpl(chapterRepo, bookContentRepo, MemoryDataStore(voice.core.data.PlaybackSettings()))
 
     // with its own chapter repo like in the app, so only the database is shared with the scanner
     val previewer = BookPreviewerImpl(

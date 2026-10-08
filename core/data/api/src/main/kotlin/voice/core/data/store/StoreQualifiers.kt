@@ -3,6 +3,9 @@ package voice.core.data.store
 import dev.zacsweers.metro.Qualifier
 
 @Qualifier
+public annotation class PlaybackSettingsStore
+
+@Qualifier
 public annotation class OnboardingCompletedStore
 
 @Qualifier

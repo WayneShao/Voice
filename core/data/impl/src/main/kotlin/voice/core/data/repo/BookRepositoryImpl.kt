@@ -1,15 +1,21 @@
 package voice.core.data.repo
 
+import androidx.datastore.core.DataStore
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.SingleIn
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import voice.core.data.Book
 import voice.core.data.BookContent
 import voice.core.data.BookId
+import voice.core.data.PlaybackSettings
+import voice.core.data.store.PlaybackSettingsStore
+import voice.core.data.withPlaybackSettings
 import voice.core.logging.api.Logger
 
 @SingleIn(AppScope::class)
@@ -17,6 +23,8 @@ import voice.core.logging.api.Logger
 public class BookRepositoryImpl(
   private val chapterRepo: ChapterRepoImpl,
   private val contentRepo: BookContentRepo,
+  @PlaybackSettingsStore
+  private val playbackSettingsStore: DataStore<PlaybackSettings>,
 ) : BookRepository {
 
   private var warmedUp = false
@@ -35,28 +43,30 @@ public class BookRepositoryImpl(
   }
 
   override fun flow(): Flow<List<Book>> {
-    return contentRepo.flow()
-      .map { contents ->
-        contents.filter { it.isActive }
-          .mapNotNull { content ->
-            content.book()
-          }
-      }
+    return combine(contentRepo.flow(), playbackSettingsStore.data) { contents, defaults ->
+      contents.filter { it.isActive }
+        .mapNotNull { content ->
+          content.withPlaybackSettings(defaults).book()
+        }
+    }.distinctUntilChanged()
   }
 
   override suspend fun all(): List<Book> {
+    val defaults = playbackSettingsStore.data.first()
     return contentRepo.all()
       .filter { it.isActive }
-      .mapNotNull { it.book() }
+      .mapNotNull { it.withPlaybackSettings(defaults).book() }
   }
 
   override fun flow(id: BookId): Flow<Book?> {
-    return contentRepo.flow(id)
-      .map { it?.book() }
+    return combine(contentRepo.flow(id), playbackSettingsStore.data) { content, defaults ->
+      content?.withPlaybackSettings(defaults)?.book()
+    }.distinctUntilChanged()
   }
 
   override suspend fun get(id: BookId): Book? {
-    return contentRepo.get(id)?.book()
+    val defaults = playbackSettingsStore.data.first()
+    return contentRepo.get(id)?.withPlaybackSettings(defaults)?.book()
   }
 
   override suspend fun updateBook(

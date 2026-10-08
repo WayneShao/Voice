@@ -29,6 +29,7 @@ import voice.core.ui.icons.VoiceIcons
 internal fun PlaybackTopBar(
   showChapters: Boolean,
   onCloseClick: () -> Unit,
+  onBookSettingsClick: () -> Unit,
   onChaptersClick: () -> Unit,
   modifier: Modifier = Modifier,
 ) {
@@ -41,6 +42,7 @@ internal fun PlaybackTopBar(
   ) {
     CloseButton(onClick = onCloseClick)
     Spacer(Modifier.weight(1F))
+    BookSettingsButton(onClick = onBookSettingsClick)
     if (showChapters) {
       FilledTonalIconButton(
         onClick = onChaptersClick,
@@ -53,6 +55,17 @@ internal fun PlaybackTopBar(
         )
       }
     }
+  }
+}
+
+@Composable
+internal fun BookSettingsButton(onClick: () -> Unit) {
+  FilledTonalIconButton(
+    onClick = onClick,
+    shapes = IconButtonDefaults.shapes(),
+    colors = topBarButtonColors(),
+  ) {
+    Icon(VoiceIcons.Settings, contentDescription = stringResource(R.string.book_playback_settings))
   }
 }
 

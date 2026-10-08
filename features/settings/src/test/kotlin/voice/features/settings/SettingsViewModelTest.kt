@@ -27,6 +27,7 @@ import voice.core.common.AppInfoProvider
 import voice.core.common.DispatcherProvider
 import voice.core.data.GridMode
 import voice.core.data.KioskModeDemoData
+import voice.core.data.PlaybackSettings
 import voice.core.data.ThemeColorScheme
 import voice.core.data.ThemeMode
 import voice.core.data.folders.AudiobookFolders
@@ -53,6 +54,7 @@ import kotlin.time.Instant
 class SettingsViewModelTest {
 
   private val scope = TestScope()
+  private val playbackSettingsStore = MemoryDataStore(PlaybackSettings())
   private val themeModeStore = MemoryDataStore(ThemeMode.FollowSystem)
   private val themeColorSchemeStore = MemoryDataStore(ThemeColorScheme.VoiceBlue)
   private val autoRewindAmountStore = MemoryDataStore(10)
@@ -91,6 +93,7 @@ class SettingsViewModelTest {
   }
 
   private val viewModel = SettingsViewModel(
+    playbackSettingsStore = playbackSettingsStore,
     themeModeStore = themeModeStore,
     themeColorSchemeStore = themeColorSchemeStore,
     autoRewindAmountStore = autoRewindAmountStore,
@@ -109,6 +112,42 @@ class SettingsViewModelTest {
     listeningHistoryRecorder = listeningHistoryRecorder,
     dispatcherProvider = DispatcherProvider(scope.coroutineContext, scope.coroutineContext, scope.coroutineContext),
   )
+
+  @Test
+  fun `global playback controls preserve the other settings and accept neutral values`() = scope.runTest {
+    viewModel.setPlaybackSpeed(1.8F)
+    viewModel.setSkipSilence(true)
+    viewModel.setGain(4F)
+    runCurrent()
+    assertEquals(PlaybackSettings(1.8F, true, 4F), playbackSettingsStore.data.first())
+    viewModel.setPlaybackSpeed(1F)
+    viewModel.setSkipSilence(false)
+    viewModel.setGain(0F)
+    runCurrent()
+    assertEquals(PlaybackSettings(), playbackSettingsStore.data.first())
+  }
+
+  @Test
+  fun `global playback values are bounded and reject non finite input`() = scope.runTest {
+    viewModel.setPlaybackSpeed(9F)
+    viewModel.setGain(-1F)
+    runCurrent()
+    assertEquals(PlaybackSettings(3.5F, false, 0F), playbackSettingsStore.data.first())
+    viewModel.setPlaybackSpeed(Float.NaN)
+    viewModel.setGain(Float.POSITIVE_INFINITY)
+    runCurrent()
+    assertEquals(PlaybackSettings(3.5F, false, 0F), playbackSettingsStore.data.first())
+  }
+
+  @Test
+  fun `global playback state follows external store updates`() = scope.runTest {
+    backgroundScope.launchMolecule(RecompositionMode.Immediate) { viewModel.viewState() }
+      .filterNotNull().test {
+        assertEquals(PlaybackSettings(), awaitItem().playbackSettings)
+        playbackSettingsStore.updateData { PlaybackSettings(1.5F, true, 3F) }
+        assertEquals(PlaybackSettings(1.5F, true, 3F), awaitItem().playbackSettings)
+      }
+  }
 
   @Test
   fun `view state defaults to follow system and voice blue`() = scope.runTest {

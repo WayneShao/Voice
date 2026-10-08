@@ -11,9 +11,11 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import io.mockk.Runs
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.just
 import io.mockk.mockk
+import io.mockk.verify
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.flowOf
@@ -24,12 +26,14 @@ import kotlinx.coroutines.test.runTest
 import org.junit.runner.RunWith
 import org.robolectric.Shadows.shadowOf
 import voice.core.data.Book
+import voice.core.data.BookContent
 import voice.core.data.BookId
 import voice.core.data.Chapter
 import voice.core.data.ChapterId
 import voice.core.data.ChapterMark
 import voice.core.data.ListeningEvent
 import voice.core.data.MarkData
+import voice.core.data.repo.BookRepository
 import voice.core.logging.api.LogWriter
 import voice.core.logging.api.Logger
 import voice.core.playback.MemoryDataStore
@@ -37,6 +41,8 @@ import voice.core.playback.history.CommandSourceResolver
 import voice.core.playback.history.ListeningHistoryRecorder
 import voice.core.playback.history.PlaybackPosition
 import voice.core.playback.history.RecordingRepo
+import voice.core.playback.misc.Decibel
+import voice.core.playback.misc.VolumeGain
 import voice.core.playback.session.MediaItemProvider
 import voice.core.playback.session.realChapterId
 import voice.core.playback.session.search.book
@@ -105,19 +111,23 @@ class VoicePlayerTest {
   private val sleepTimer = FakeSleepTimer()
   private val historyRepo = RecordingRepo()
   private val chapterMarkPlayer = ChapterMarkPlayer(internalPlayer, mediaItemProvider)
+  private val bookUpdates = MutableStateFlow<Book?>(null)
+  private val volumeGain = mockk<VolumeGain>(relaxed = true)
+  private val repository = mockk<BookRepository> {
+    coEvery { get(any<BookId>()) } answers { currentBook }
+    every { flow(any()) } answers { flowOf(currentBook) }
+    coEvery { updateBook(any(), any()) } just Runs
+  }
   private val player = VoicePlayer(
     player = chapterMarkPlayer,
-    repo = mockk {
-      coEvery { get(bookId) } answers { currentBook }
-      coEvery { updateBook(any(), any()) } just Runs
-    },
+    repo = repository,
     currentBookStoreId = mockk {
       every { data } returns flowOf(bookId)
     },
     seekTimeStore = seekTimeStore,
     autoRewindAmountStore = autoRewindAmountStore,
     scope = scope,
-    volumeGain = mockk(relaxed = true),
+    volumeGain = volumeGain,
     sleepTimer = sleepTimer,
     analytics = mockk(relaxed = true),
     historyRecorder = ListeningHistoryRecorder(
@@ -127,6 +137,73 @@ class VoicePlayerTest {
     ),
     commandSourceResolver = CommandSourceResolver(ApplicationProvider.getApplicationContext()),
   )
+
+  @Test
+  fun `loading and reactive settings updates never write book overrides`() = scope.runTest {
+    every { repository.flow(any()) } returns bookUpdates
+    setMediaItems(listOf(chapter(ChapterMark(name = null, startMs = 0, endMs = 20000))))
+    player.prepare()
+    awaitReady()
+    player.seekTo(3000)
+    runCurrent()
+    coVerify(exactly = 0) { repository.updateBook(any(), any()) }
+    bookUpdates.value = currentBook.update { it.copy(playbackSpeed = 1.5F, skipSilence = true, gain = 3F) }
+    runCurrent()
+    assertEquals(1.5F, player.playbackParameters.speed)
+    assertEquals(true, internalPlayer.skipSilenceEnabled)
+    verify { volumeGain.gain = Decibel(3F) }
+    // Returning to global values updates the player without a write or position reset.
+    bookUpdates.value = currentBook.update { it.copy(playbackSpeed = 1F, skipSilence = false, gain = 0F) }
+    runCurrent()
+    assertEquals(1F, player.playbackParameters.speed)
+    assertEquals(false, internalPlayer.skipSilenceEnabled)
+    verify { volumeGain.gain = Decibel(0F) }
+    assertEquals(3000L, player.currentPosition)
+    coVerify(exactly = 0) { repository.updateBook(any(), any()) }
+    player.release()
+    bookUpdates.value = currentBook.update { it.copy(gain = 9F) }
+    runCurrent()
+    verify(exactly = 0) { volumeGain.gain = Decibel(9F) }
+  }
+
+  @Test
+  fun `switching books cancels observation of the old book`() = scope.runTest {
+    val nextUpdates = MutableStateFlow<Book?>(null)
+    every { repository.flow(any()) } answers { if (firstArg<BookId>() == bookId) bookUpdates else nextUpdates }
+    setMediaItems(listOf(chapter(ChapterMark(name = null, startMs = 0, endMs = 20000))))
+    val oldBook = currentBook
+    currentBook = oldBook.update { it.copy(id = BookId("next"), playbackSpeed = 1.25F) }
+    player.setMediaItem(mediaItemProvider.mediaItem(currentBook))
+    runCurrent()
+    bookUpdates.value = oldBook.update { it.copy(playbackSpeed = 3F, gain = 9F) }
+    runCurrent()
+    assertEquals(1.25F, player.playbackParameters.speed)
+    verify(exactly = 0) { volumeGain.gain = Decibel(9F) }
+    nextUpdates.value = currentBook.update { it.copy(playbackSpeed = 1.5F) }
+    runCurrent()
+    assertEquals(1.5F, player.playbackParameters.speed)
+    player.release()
+  }
+
+  @Test
+  fun `explicit edit captures loaded book and marks only the edited setting`() = scope.runTest {
+    setMediaItems(listOf(chapter(ChapterMark(name = null, startMs = 0, endMs = 20000))))
+    val original = currentBook
+    val edits = mutableListOf<Pair<BookId, BookContent>>()
+    coEvery { repository.updateBook(any(), any()) } answers {
+      edits += firstArg<BookId>() to secondArg<(BookContent) -> BookContent>()(original.content)
+    }
+    player.setPlaybackSpeed(1F)
+    currentBook = currentBook.update { it.copy(id = BookId("other")) }
+    player.setMediaItem(mediaItemProvider.mediaItem(currentBook))
+    runCurrent()
+    val speedEdit = edits.single()
+    assertEquals(original.id, speedEdit.first)
+    assertFalse(speedEdit.second.useGlobalPlaybackSpeed)
+    assertEquals(true, speedEdit.second.useGlobalSkipSilence)
+    assertEquals(true, speedEdit.second.useGlobalGain)
+    player.release()
+  }
 
   @Test
   fun `seekToNext carries over into the next chapter mark`() = scope.runTest {

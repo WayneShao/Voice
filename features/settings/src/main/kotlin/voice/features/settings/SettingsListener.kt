@@ -5,6 +5,9 @@ import voice.core.data.ThemeMode
 import java.time.LocalTime
 
 interface SettingsListener {
+  fun setPlaybackSpeed(speed: Float)
+  fun setSkipSilence(enabled: Boolean)
+  fun setGain(gain: Float)
   fun close()
   fun setThemeMode(themeMode: ThemeMode)
   fun setThemeColorScheme(themeColorScheme: ThemeColorScheme)
@@ -31,6 +34,9 @@ interface SettingsListener {
 
   companion object {
     fun noop() = object : SettingsListener {
+      override fun setPlaybackSpeed(speed: Float) {}
+      override fun setSkipSilence(enabled: Boolean) {}
+      override fun setGain(gain: Float) {}
       override fun close() {}
       override fun setThemeMode(themeMode: ThemeMode) {}
       override fun setThemeColorScheme(themeColorScheme: ThemeColorScheme) {}

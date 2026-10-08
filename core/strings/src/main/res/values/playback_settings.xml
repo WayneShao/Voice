@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="global_playback_settings">Global playback settings</string>
+    <string name="global_playback_settings_summary">Used by books that follow global settings. Book overrides stay unchanged.</string>
+    <string name="book_playback_settings">Book playback settings</string>
+    <string name="playback_setting_skip_silence">Skip silence</string>
+    <string name="playback_setting_gain_value">%1$s dB</string>
+    <string name="playback_setting_follow_global">Follow global settings</string>
+    <string name="playback_setting_book_override">Use book override</string>
+    <string name="playback_setting_reset_all">Reset all to global settings</string>
+    <string name="playback_setting_inherited">Following global settings</string>
+    <string name="playback_setting_overridden">Set for this book</string>
+</resources>

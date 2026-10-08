@@ -233,6 +233,7 @@ class BookSearchTest {
     val repo = BookRepositoryImpl(
       chapterRepo = ChapterRepoImpl(db.chapterDao()),
       contentRepo = BookContentRepoImpl(db.bookContentDao()),
+      playbackSettingsStore = MemoryDataStore(voice.core.data.PlaybackSettings()),
     )
     val search = BookSearch(
       dao = db.bookContentDao(),

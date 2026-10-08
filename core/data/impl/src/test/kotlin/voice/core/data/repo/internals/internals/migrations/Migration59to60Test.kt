@@ -26,7 +26,7 @@ class Migration59to60Test {
 
   @Test
   fun `existing bookmarks become notes and the history starts empty`() {
-    val dbName = "testDb"
+    val dbName = InstrumentationRegistry.getInstrumentation().targetContext.getDatabasePath("testDb").absolutePath
     helper.createDatabase(dbName, 59).use { db ->
       db.insert(
         "bookmark2",

@@ -17,6 +17,7 @@ import kotlinx.serialization.builtins.nullable
 import kotlinx.serialization.builtins.serializer
 import voice.core.data.BookId
 import voice.core.data.GridMode
+import voice.core.data.PlaybackSettings
 import voice.core.data.ThemeColorScheme
 import voice.core.data.ThemeMode
 import voice.core.data.sleeptimer.SleepTimerPreference
@@ -28,6 +29,17 @@ import kotlin.time.Duration.Companion.seconds
 @BindingContainer
 @ContributesTo(AppScope::class)
 public object StoreModule {
+
+  @Provides
+  @SingleIn(AppScope::class)
+  @PlaybackSettingsStore
+  private fun playbackSettings(factory: VoiceDataStoreFactory): DataStore<PlaybackSettings> {
+    return factory.create(
+      serializer = PlaybackSettings.serializer(),
+      fileName = "playbackSettings",
+      defaultValue = PlaybackSettings(),
+    )
+  }
 
   @Provides
   @SingleIn(AppScope::class)

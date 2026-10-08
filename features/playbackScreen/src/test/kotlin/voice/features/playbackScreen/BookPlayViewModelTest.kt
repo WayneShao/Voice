@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.yield
 import voice.core.common.DispatcherProvider
@@ -27,6 +28,7 @@ import voice.core.data.ChapterId
 import voice.core.data.KioskModeDemoData
 import voice.core.data.ListeningEvent
 import voice.core.data.MarkData
+import voice.core.data.repo.BookRepository
 import voice.core.data.sleeptimer.SleepTimerPreference
 import voice.core.featureflag.MemoryFeatureFlag
 import voice.core.playback.CurrentBookResolver
@@ -34,6 +36,7 @@ import voice.core.playback.LivePlaybackState
 import voice.core.playback.PlayerController
 import voice.core.playback.history.ListeningHistoryRecorder
 import voice.core.playback.history.PlaybackPosition
+import voice.core.playback.misc.Decibel
 import voice.core.playback.overlay
 import voice.core.playback.playstate.PlayStateManager
 import voice.core.sleeptimer.SleepTimer
@@ -90,11 +93,17 @@ class BookPlayViewModelTest {
   private val currentBookResolver = mockk<CurrentBookResolver> {
     coEvery { book(book.id) } returns book
   }
+  private var storedContent = book.content
+  private val effectiveBook = MutableStateFlow(book)
+  private val bookRepository = mockk<BookRepository> {
+    coEvery { get(book.id) } answers { effectiveBook.value }
+    every { flow(book.id) } returns effectiveBook
+    coEvery { updateBook(book.id, any()) } answers {
+      storedContent = secondArg<(BookContent) -> BookContent>()(storedContent)
+    }
+  }
   private val viewModel = BookPlayViewModel(
-    bookRepository = mockk {
-      coEvery { get(book.id) } returns book
-      every { flow(book.id) } returns MutableStateFlow(book)
-    },
+    bookRepository = bookRepository,
     currentBookResolver = currentBookResolver,
     player = player.apply {
       every { pauseIfCurrentBookDifferentFrom(book.id) } just Runs
@@ -115,7 +124,7 @@ class BookPlayViewModelTest {
       )
       every { bookmarksFlow(any()) } returns flowOf(emptyList())
     },
-    volumeGainFormatter = mockk(),
+    volumeGainFormatter = VolumeGainFormatter(),
     batteryOptimization = mockk(),
     sleepTimerPreferenceStore = sleepTimerDataStore,
     seekTimeStore = MemoryDataStore(20),
@@ -126,6 +135,110 @@ class BookPlayViewModelTest {
     historyRecorder = historyRecorder,
     clock = clock,
   )
+
+  @Test
+  fun `speed dialog keeps consecutive edits until persistence catches up`() = scope.runTest {
+    every { player.setSpeed(any()) } just Runs
+    viewModel.onPlaybackSpeedChanged(1.05F)
+    backgroundScope.launchMolecule(RecompositionMode.Immediate) { viewModel.resolvedDialogState() }.test {
+      val first = assertIs<BookPlayDialogViewState.SpeedDialog>(awaitItem())
+      assertEquals(1.05F, first.speed)
+      viewModel.onPlaybackSpeedChanged(first.speed + 0.05F)
+      val second = assertIs<BookPlayDialogViewState.SpeedDialog>(awaitItem())
+      assertEquals(1.10F, second.speed, 0.001F)
+      effectiveBook.value = book.update { it.copy(playbackSpeed = 1.05F) }
+      runCurrent()
+      expectNoEvents()
+      effectiveBook.value = book.update { it.copy(playbackSpeed = second.speed) }
+      runCurrent()
+      expectNoEvents()
+      effectiveBook.value = book.update { it.copy(playbackSpeed = 1.5F) }
+      assertEquals(1.5F, assertIs<BookPlayDialogViewState.SpeedDialog>(awaitItem()).speed)
+      verifyOrder {
+        player.setSpeed(1.05F)
+        player.setSpeed(second.speed)
+      }
+    }
+  }
+
+  @Test
+  fun `gain dialog keeps local edits until persistence acknowledges them`() = scope.runTest {
+    every { player.setGain(any()) } just Runs
+    viewModel.onVolumeGainChanged(Decibel(3F))
+    backgroundScope.launchMolecule(RecompositionMode.Immediate) { viewModel.resolvedDialogState() }.test {
+      val edited = assertIs<BookPlayDialogViewState.VolumeGainDialog>(awaitItem())
+      effectiveBook.value = book.update { it.copy(positionInChapter = 1) }
+      runCurrent()
+      expectNoEvents()
+      effectiveBook.value = book.update { it.copy(gain = 3F) }
+      runCurrent()
+      expectNoEvents()
+      effectiveBook.value = book.update { it.copy(gain = 0F) }
+      val inherited = assertIs<BookPlayDialogViewState.VolumeGainDialog>(awaitItem())
+      kotlin.test.assertNotEquals(edited, inherited)
+    }
+  }
+
+  @Test
+  fun `overriding inherited settings copies effective values instead of dormant stored values`() = scope.runTest {
+    effectiveBook.value = book.copy(content = book.content.copy(playbackSpeed = 1.8F, skipSilence = true, gain = 5F))
+    viewModel.setSpeedInherited(false)
+    viewModel.setSkipSilenceInherited(false)
+    viewModel.setGainInherited(false)
+    runCurrent()
+    assertEquals(1.8F, storedContent.playbackSpeed)
+    assertEquals(true, storedContent.skipSilence)
+    assertEquals(5F, storedContent.gain)
+    assertEquals(false, storedContent.useGlobalPlaybackSpeed)
+    assertEquals(false, storedContent.useGlobalSkipSilence)
+    assertEquals(false, storedContent.useGlobalGain)
+  }
+
+  @Test
+  fun `neutral values remain explicit book overrides`() = scope.runTest {
+    viewModel.setBookSpeed(1F)
+    viewModel.setBookSkipSilence(false)
+    viewModel.setBookGain(0F)
+    runCurrent()
+    assertEquals(1F, storedContent.playbackSpeed)
+    assertEquals(false, storedContent.skipSilence)
+    assertEquals(0F, storedContent.gain)
+    assertEquals(false, storedContent.useGlobalPlaybackSpeed)
+    assertEquals(false, storedContent.useGlobalSkipSilence)
+    assertEquals(false, storedContent.useGlobalGain)
+  }
+
+  @Test
+  fun `individual reset preserves other overrides and reset all restores all inheritance`() = scope.runTest {
+    viewModel.setBookSpeed(1.4F)
+    viewModel.setBookSkipSilence(true)
+    viewModel.setBookGain(3F)
+    runCurrent()
+    viewModel.setSpeedInherited(true)
+    runCurrent()
+    assertEquals(true, storedContent.useGlobalPlaybackSpeed)
+    assertEquals(false, storedContent.useGlobalSkipSilence)
+    assertEquals(false, storedContent.useGlobalGain)
+    assertEquals(1.4F, storedContent.playbackSpeed)
+    viewModel.resetBookSettings()
+    runCurrent()
+    assertEquals(true, storedContent.useGlobalPlaybackSpeed)
+    assertEquals(true, storedContent.useGlobalSkipSilence)
+    assertEquals(true, storedContent.useGlobalGain)
+    assertEquals(3F, storedContent.gain)
+  }
+
+  @Test
+  fun `open book settings follows repository effective settings changes`() = scope.runTest {
+    viewModel.onBookSettingsClick()
+    runCurrent()
+    backgroundScope.launchMolecule(RecompositionMode.Immediate) { viewModel.resolvedDialogState() }.test {
+      assertIs<BookPlayDialogViewState.BookSettings>(awaitItem())
+      effectiveBook.value = book.copy(content = book.content.copy(playbackSpeed = 2F))
+      val state = assertIs<BookPlayDialogViewState.BookSettings>(awaitItem())
+      assertEquals(2F, state.content.playbackSpeed)
+    }
+  }
 
   @Test
   fun sleepTimerValueChanging() = scope.runTest {

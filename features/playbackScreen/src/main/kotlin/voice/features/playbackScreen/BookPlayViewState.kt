@@ -72,6 +72,8 @@ data class BookPlayViewState(
 }
 
 internal sealed interface BookPlayDialogViewState {
+  data class BookSettings(val content: voice.core.data.BookContent) : BookPlayDialogViewState
+
   data class SpeedDialog(val speed: Float) : BookPlayDialogViewState
 
   data class VolumeGainDialog(

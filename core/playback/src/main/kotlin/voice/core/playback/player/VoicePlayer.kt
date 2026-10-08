@@ -7,13 +7,18 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import dev.zacsweers.metro.Inject
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import voice.core.analytics.api.Analytics
 import voice.core.data.BookContent
 import voice.core.data.BookId
 import voice.core.data.ListeningEvent
+import voice.core.data.PlaybackSettings
 import voice.core.data.repo.BookRepository
 import voice.core.data.store.AutoRewindAmountStore
 import voice.core.data.store.CurrentBookStore
@@ -55,6 +60,34 @@ class VoicePlayer(
   private val historyRecorder: ListeningHistoryRecorder,
   private val commandSourceResolver: CommandSourceResolver,
 ) : ForwardingPlayer(player) {
+
+  private var loadedBookId: BookId? = null
+  private var settingsJob: Job? = null
+
+  private fun applySettings(settings: PlaybackSettings) {
+    player.setPlaybackSpeed(settings.playbackSpeed)
+    player.setSkipSilenceEnabled(settings.skipSilence)
+    volumeGain.gain = Decibel(settings.gain)
+  }
+
+  private fun observeSettings(bookId: BookId) {
+    settingsJob?.cancel()
+    settingsJob = scope.launch {
+      repo.flow(bookId)
+        .filterNotNull()
+        .map { PlaybackSettings(it.content.playbackSpeed, it.content.skipSilence, it.content.gain) }
+        .distinctUntilChanged()
+        .collect { settings ->
+          if (loadedBookId == bookId) applySettings(settings)
+        }
+    }
+  }
+
+  override fun release() {
+    settingsJob?.cancel()
+    loadedBookId = null
+    super.release()
+  }
 
   private val endOfChapterSleepTimerListener = object : Player.Listener {
     override fun onPositionDiscontinuity(
@@ -381,18 +414,19 @@ class VoicePlayer(
           repo.get(mediaId.id)
         }
         if (book != null) {
-          player.setPlaybackSpeed(book.content.playbackSpeed)
-          setSkipSilenceEnabled(book.content.skipSilence)
-          volumeGain.gain = Decibel(book.content.gain)
           val currentPlaybackItem = book.playbackItemForPosition(
             chapterId = book.content.currentChapter,
             positionInChapterMs = book.content.positionInChapter,
           ) ?: return
+          settingsJob?.cancel()
           player.setBook(
             book = book,
             startItemIndex = currentPlaybackItem.index,
             positionInItemMs = currentPlaybackItem.positionInMediaItem(book.content.positionInChapter),
           )
+          loadedBookId = book.id
+          applySettings(PlaybackSettings(book.content.playbackSpeed, book.content.skipSilence, book.content.gain))
+          observeSettings(book.id)
         }
       } else {
         Logger.w("Unexpected mediaId=$mediaId")
@@ -408,28 +442,24 @@ class VoicePlayer(
       value = speed.toString(),
     )
     super.setPlaybackSpeed(speed)
-    scope.launch {
-      updateBook { it.copy(playbackSpeed = speed) }
-    }
+    updateBook { it.copy(playbackSpeed = speed, useGlobalPlaybackSpeed = false) }
   }
 
   fun setSkipSilenceEnabled(enabled: Boolean) {
-    scope.launch {
-      updateBook { it.copy(skipSilence = enabled) }
-    }
+    updateBook { it.copy(skipSilence = enabled, useGlobalSkipSilence = false) }
     player.setSkipSilenceEnabled(enabled)
   }
 
   fun setGain(gain: Decibel) {
     volumeGain.gain = gain
-    scope.launch {
-      updateBook { it.copy(gain = gain.value) }
-    }
+    updateBook { it.copy(gain = gain.value, useGlobalGain = false) }
   }
 
-  private suspend fun updateBook(update: (BookContent) -> BookContent) {
-    val bookId = currentBookStoreId.data.first() ?: return
-    repo.updateBook(bookId, update)
+  private fun updateBook(update: (BookContent) -> BookContent) {
+    val bookId = loadedBookId ?: return
+    scope.launch {
+      repo.updateBook(bookId, update)
+    }
   }
 }
 

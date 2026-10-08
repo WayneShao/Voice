@@ -50,7 +50,7 @@ public abstract class AppDb : RoomDatabase() {
   public abstract fun listeningEventDao(): ListeningEventDao
 
   internal companion object {
-    const val VERSION = 60
+    const val VERSION = 61
     const val DATABASE_NAME = "autoBookDB"
   }
 }

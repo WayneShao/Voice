@@ -34,7 +34,7 @@ fun BookPlayScreen(bookId: BookId) {
       .create(bookId)
   }
   val snackbarHostState = remember { SnackbarHostState() }
-  val dialogState = viewModel.dialogState.value
+  val dialogState = viewModel.resolvedDialogState()
   val viewState = viewModel.viewState()
   HoldSplashScreenWhile(loading = viewState == null)
   if (viewState == null) return
@@ -83,6 +83,7 @@ fun BookPlayScreen(bookId: BookId) {
       onVolumeBoostClick = viewModel::onVolumeGainIconClick,
       onSpeedChangeClick = viewModel::onPlaybackSpeedIconClick,
       onCloseClick = viewModel::onCloseClick,
+      onBookSettingsClick = viewModel::onBookSettingsClick,
       onSkipToNext = viewModel::next,
       onSkipToPrevious = viewModel::previous,
       onCurrentChapterClick = viewModel::onCurrentChapterClick,
@@ -93,6 +94,19 @@ fun BookPlayScreen(bookId: BookId) {
     )
     when (dialogState) {
       null -> {}
+      is BookPlayDialogViewState.BookSettings -> {
+        BookSettingsSheet(
+          content = dialogState.content,
+          onSpeedChange = viewModel::setBookSpeed,
+          onSkipSilenceChange = viewModel::setBookSkipSilence,
+          onGainChange = viewModel::setBookGain,
+          onSpeedInheritedChange = viewModel::setSpeedInherited,
+          onSkipSilenceInheritedChange = viewModel::setSkipSilenceInherited,
+          onGainInheritedChange = viewModel::setGainInherited,
+          onResetAll = viewModel::resetBookSettings,
+          onDismiss = viewModel::dismissDialog,
+        )
+      }
       is BookPlayDialogViewState.SpeedDialog -> {
         SpeedSheet(
           dialogState = dialogState,

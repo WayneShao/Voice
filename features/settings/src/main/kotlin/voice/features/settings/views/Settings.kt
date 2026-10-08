@@ -169,6 +169,15 @@ private fun LazyListScope.sections(
       onThemeColorSchemeSelect = listener::setThemeColorScheme,
     )
   }
+  section("playback") { modifier ->
+    GlobalPlaybackSection(
+      settings = viewState.playbackSettings,
+      onSpeedChange = listener::setPlaybackSpeed,
+      onSkipSilenceChange = listener::setSkipSilence,
+      onGainChange = listener::setGain,
+      modifier = modifier,
+    )
+  }
   section("listening") { modifier ->
     ListeningSection(
       modifier = modifier,

@@ -44,6 +44,10 @@ class ProgressCarryOverTest {
       chapters = oldChapters,
     ).copy(
       name = "Renamed",
+      playbackSpeed = 1.75F,
+      useGlobalPlaybackSpeed = false,
+      skipSilence = false,
+      useGlobalSkipSilence = false,
       cover = File("cover.webp"),
       currentChapter = oldChapters[1],
       positionInChapter = 42,
@@ -74,6 +78,10 @@ class ProgressCarryOverTest {
     assertEquals(
       expected = new.copy(
         name = "Renamed",
+        playbackSpeed = 1.75F,
+        useGlobalPlaybackSpeed = false,
+        skipSilence = false,
+        useGlobalSkipSilence = false,
         cover = File("cover.webp"),
         currentChapter = newChapters[1],
         positionInChapter = 42,

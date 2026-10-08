@@ -28,6 +28,12 @@ public data class BookContent(
   val narrator: String?,
   val series: String?,
   val part: String?,
+  @ColumnInfo(defaultValue = "1")
+  val useGlobalPlaybackSpeed: Boolean = true,
+  @ColumnInfo(defaultValue = "1")
+  val useGlobalSkipSilence: Boolean = true,
+  @ColumnInfo(defaultValue = "1")
+  val useGlobalGain: Boolean = true,
 ) {
 
   @Ignore

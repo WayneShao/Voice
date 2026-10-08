@@ -19,6 +19,7 @@ import voice.core.common.DispatcherProvider
 import voice.core.common.MainScope
 import voice.core.data.GridMode
 import voice.core.data.KioskModeDemoData
+import voice.core.data.PlaybackSettings
 import voice.core.data.ThemeColorScheme
 import voice.core.data.ThemeMode
 import voice.core.data.folders.AudiobookFolders
@@ -28,6 +29,7 @@ import voice.core.data.store.AutoRewindAmountStore
 import voice.core.data.store.DeveloperMenuUnlockedStore
 import voice.core.data.store.GridModeStore
 import voice.core.data.store.ListeningHistoryEnabledStore
+import voice.core.data.store.PlaybackSettingsStore
 import voice.core.data.store.SeekTimeStore
 import voice.core.data.store.SleepTimerPreferenceStore
 import voice.core.data.store.ThemeColorSchemeStore
@@ -36,6 +38,7 @@ import voice.core.documentfile.nameWithoutExtension
 import voice.core.featureflag.FeatureFlag
 import voice.core.featureflag.KioskModeFeatureFlagQualifier
 import voice.core.playback.history.ListeningHistoryRecorder
+import voice.core.playback.misc.VolumeGain
 import voice.core.ui.DynamicColorAvailability
 import voice.core.ui.GridCount
 import voice.navigation.Destination
@@ -71,6 +74,8 @@ class SettingsViewModel(
   private val listeningHistoryEnabledStore: DataStore<Boolean>,
   private val listeningHistoryRecorder: ListeningHistoryRecorder,
   private val dispatcherProvider: DispatcherProvider,
+  @PlaybackSettingsStore
+  private val playbackSettingsStore: DataStore<PlaybackSettings>,
 ) : SettingsListener {
 
   private val mainScope = MainScope(dispatcherProvider)
@@ -84,6 +89,7 @@ class SettingsViewModel(
    */
   @Composable
   fun viewState(): SettingsViewState? {
+    val playbackSettings = remember { playbackSettingsStore.data }.collectAsState(initial = null).value
     val themeMode = remember { themeModeStore.data }.collectAsState(initial = null).value
     val themeColorScheme = remember { themeColorSchemeStore.data }.collectAsState(initial = null).value
     val autoRewindAmount = remember { autoRewindAmountStore.data }.collectAsState(initial = null).value
@@ -99,6 +105,7 @@ class SettingsViewModel(
       dynamicColorAvailability.isSupported()
     }
     if (
+      playbackSettings == null ||
       themeMode == null ||
       themeColorScheme == null ||
       autoRewindAmount == null ||
@@ -113,6 +120,7 @@ class SettingsViewModel(
       return null
     }
     return SettingsViewState(
+      playbackSettings = playbackSettings,
       themeMode = themeMode,
       themeColorScheme = themeColorScheme,
       dynamicColorAvailable = dynamicColorAvailable,
@@ -147,6 +155,20 @@ class SettingsViewModel(
         .map { it.documentFile.nameWithoutExtension() }
         .sortedWith(String.CASE_INSENSITIVE_ORDER)
     }
+  }
+
+  override fun setPlaybackSpeed(speed: Float) {
+    if (!speed.isFinite()) return
+    mainScope.launch { playbackSettingsStore.updateData { it.copy(playbackSpeed = speed.coerceIn(0.5F, 3.5F)) } }
+  }
+
+  override fun setSkipSilence(enabled: Boolean) {
+    mainScope.launch { playbackSettingsStore.updateData { it.copy(skipSilence = enabled) } }
+  }
+
+  override fun setGain(gain: Float) {
+    if (!gain.isFinite()) return
+    mainScope.launch { playbackSettingsStore.updateData { it.copy(gain = gain.coerceIn(0F, VolumeGain.MAX_GAIN.value)) } }
   }
 
   override fun close() {

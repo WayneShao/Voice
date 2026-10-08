@@ -169,7 +169,7 @@ class NaturalOrderComparatorTest {
   @Test
   fun uriComparatorFiles() {
     val expected = testFiles()
-    val uris = expected.map { Uri.fromFile(it) }
+    val uris = expected.map { Uri.parse(it.toURI().toString()) }
 
     assertEquals(
       expected = uris,

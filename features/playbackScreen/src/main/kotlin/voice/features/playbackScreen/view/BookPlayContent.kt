@@ -70,6 +70,7 @@ internal fun BookPlayContent(
   onSkipSilenceClick: () -> Unit,
   onVolumeBoostClick: () -> Unit,
   onCloseClick: () -> Unit,
+  onBookSettingsClick: () -> Unit,
   onJumpBack: (id: Long) -> Unit,
   onJumpBackExpire: (id: Long) -> Unit,
 ) {
@@ -182,7 +183,11 @@ internal fun BookPlayContent(
           .fillMaxHeight()
           .padding(vertical = 8.dp),
       ) {
-        CloseButton(onClick = onCloseClick)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+          CloseButton(onClick = onCloseClick)
+          Spacer(Modifier.weight(1F))
+          BookSettingsButton(onClick = onBookSettingsClick)
+        }
         cover(
           Modifier
             .weight(1F)

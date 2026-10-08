@@ -1,6 +1,7 @@
 package voice.features.playbackScreen
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -20,6 +21,7 @@ import kotlinx.coroutines.launch
 import voice.core.common.DispatcherProvider
 import voice.core.common.MainScope
 import voice.core.data.Book
+import voice.core.data.BookContent
 import voice.core.data.BookId
 import voice.core.data.Bookmark
 import voice.core.data.KioskModeDemoData
@@ -98,6 +100,8 @@ class BookPlayViewModel(
     field = mutableStateOf<BookPlayDialogViewState?>(null)
 
   private val addedBookmark = mutableStateOf<Bookmark.Id?>(null)
+  private val pendingSpeed = mutableStateOf<Float?>(null)
+  private val pendingGain = mutableStateOf<Decibel?>(null)
 
   init {
     scope.launch {
@@ -237,9 +241,91 @@ class BookPlayViewModel(
     )
   }
 
+  @Composable
+  internal fun resolvedDialogState(): BookPlayDialogViewState? {
+    val selected = dialogState.value
+    if (selected !is BookPlayDialogViewState.BookSettings &&
+      selected !is BookPlayDialogViewState.SpeedDialog &&
+      selected !is BookPlayDialogViewState.VolumeGainDialog
+    ) {
+      return selected
+    }
+    val content = remember(bookId) { bookRepository.flow(bookId) }.collectAsState(initial = null).value?.content
+      ?: return selected
+    val speed = pendingSpeed.value
+    val gain = pendingGain.value
+    SideEffect {
+      if (speed == content.playbackSpeed) pendingSpeed.value = null
+      if (gain?.value == content.gain) pendingGain.value = null
+    }
+    return when (selected) {
+      is BookPlayDialogViewState.BookSettings -> selected.copy(content = content)
+      is BookPlayDialogViewState.SpeedDialog -> selected.copy(speed = speed ?: content.playbackSpeed)
+      is BookPlayDialogViewState.VolumeGainDialog -> volumeGainDialogViewState(gain ?: Decibel(content.gain))
+    }
+  }
+
+  fun onBookSettingsClick() {
+    scope.launch {
+      val content = bookRepository.get(bookId)?.content ?: return@launch
+      dialogState.value = BookPlayDialogViewState.BookSettings(content)
+    }
+  }
+
+  fun setBookSpeed(speed: Float) {
+    if (!speed.isFinite()) return
+    updateBookSettings { it.copy(playbackSpeed = speed.coerceIn(0.5F, 3.5F), useGlobalPlaybackSpeed = false) }
+  }
+
+  fun setBookSkipSilence(enabled: Boolean) {
+    updateBookSettings { it.copy(skipSilence = enabled, useGlobalSkipSilence = false) }
+  }
+
+  fun setBookGain(gain: Float) {
+    if (!gain.isFinite()) return
+    updateBookSettings { it.copy(gain = gain.coerceIn(0F, VolumeGain.MAX_GAIN.value), useGlobalGain = false) }
+  }
+
+  fun setSpeedInherited(inherited: Boolean) {
+    scope.launch {
+      val effective = bookRepository.get(bookId)?.content ?: return@launch
+      bookRepository.updateBook(bookId) {
+        it.copy(useGlobalPlaybackSpeed = inherited, playbackSpeed = if (inherited) it.playbackSpeed else effective.playbackSpeed)
+      }
+    }
+  }
+
+  fun setSkipSilenceInherited(inherited: Boolean) {
+    scope.launch {
+      val effective = bookRepository.get(bookId)?.content ?: return@launch
+      bookRepository.updateBook(bookId) {
+        it.copy(useGlobalSkipSilence = inherited, skipSilence = if (inherited) it.skipSilence else effective.skipSilence)
+      }
+    }
+  }
+
+  fun setGainInherited(inherited: Boolean) {
+    scope.launch {
+      val effective = bookRepository.get(bookId)?.content ?: return@launch
+      bookRepository.updateBook(bookId) {
+        it.copy(useGlobalGain = inherited, gain = if (inherited) it.gain else effective.gain)
+      }
+    }
+  }
+
+  fun resetBookSettings() {
+    updateBookSettings { it.copy(useGlobalPlaybackSpeed = true, useGlobalSkipSilence = true, useGlobalGain = true) }
+  }
+
+  private fun updateBookSettings(update: (BookContent) -> BookContent) {
+    scope.launch { bookRepository.updateBook(bookId, update) }
+  }
+
   fun dismissDialog() {
     Logger.d("dismissDialog")
     dialogState.value = null
+    pendingSpeed.value = null
+    pendingGain.value = null
   }
 
   fun incrementSleepTime() {
@@ -297,11 +383,13 @@ class BookPlayViewModel(
   }
 
   fun onPlaybackSpeedChanged(speed: Float) {
+    pendingSpeed.value = speed
     dialogState.value = BookPlayDialogViewState.SpeedDialog(speed)
     player.setSpeed(speed)
   }
 
   fun onVolumeGainChanged(gain: Decibel) {
+    pendingGain.value = gain
     dialogState.value = volumeGainDialogViewState(gain)
     player.setGain(gain)
   }

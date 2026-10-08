@@ -1,5 +1,6 @@
 package voice.features.settings
 
+import voice.core.data.PlaybackSettings
 import voice.core.data.ThemeColorScheme
 import voice.core.data.ThemeMode
 import java.time.LocalTime
@@ -19,6 +20,7 @@ data class SettingsViewState(
   val showSupportDevelopment: Boolean,
   val folderNames: List<String>,
   val listeningHistoryEnabled: Boolean,
+  val playbackSettings: PlaybackSettings = PlaybackSettings(),
 ) {
 
   companion object {
